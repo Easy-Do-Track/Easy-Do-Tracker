@@ -56,6 +56,7 @@ int main() {
 
     if (!mpu.testConnection()){
         printf("connection failed\n");
+        return 3;
     }
 
     mpu.setXGyroOffset(0);
