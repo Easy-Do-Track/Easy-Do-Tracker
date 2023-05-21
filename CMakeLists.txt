@@ -20,12 +20,14 @@ add_executable(easy-do-tracker
 target_include_directories(easy-do-tracker PUBLIC
         lib/i2cdevlib/RP2040/I2Cdev
         lib/i2cdevlib/RP2040/MPU6050
+        ${CMAKE_CURRENT_LIST_DIR}
         )
 
 target_link_libraries(easy-do-tracker
         pico_stdlib
         hardware_i2c
         pico_cyw43_arch_none
+        pico_cyw43_arch_lwip_threadsafe_background
         )
 
 target_compile_definitions(easy-do-tracker PRIVATE

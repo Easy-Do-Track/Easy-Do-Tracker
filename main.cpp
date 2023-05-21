@@ -63,6 +63,14 @@ int main() {
     printf("UDP Address: %s\n", UDP_ADDR);
     printf("UDP Port: %d\n", UDP_PORT);
 
+    cyw43_arch_enable_sta_mode();
+    printf("Connecting to Wi-Fi...\n");
+    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000)){
+        printf("Failed to connect.\n");
+        return 1;
+    }
+    printf("Connected.\n");
+
     //scanTCAPorts();
 
     tcaSelect(0);
