@@ -1,18 +1,14 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "pico/cyw43_arch.h"
 #include "MPU6050_6Axis_MotionApps_V6_12.h"
 
 #define TCA_ADDR 0x70
 
 void waitForUSB(){
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-
     while (!stdio_usb_connected()) { // blink the pico's led until usb connection is established
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
         sleep_ms(10);
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
         sleep_ms(10);
     }
 }
@@ -54,6 +50,9 @@ int main() {
     gpio_set_function(1, GPIO_FUNC_I2C);
     gpio_pull_up(0);
     gpio_pull_up(1);
+
+    cyw43_arch_init();
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 
     waitForUSB();
 
