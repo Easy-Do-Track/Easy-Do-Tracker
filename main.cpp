@@ -27,6 +27,26 @@ void tcaSelect(uint8_t i){
     i2c_write_blocking(i2c_default, TCA_ADDR, &i, 1, false);
 }
 
+void scanTCAPorts(){
+    for (uint8_t i=0; i<8; i++){
+        printf("TCA Port #%d", i);
+        tcaSelect(i);
+
+        for (uint8_t addr=0; addr<=127; addr++){
+            if (addr==TCA_ADDR) continue;
+
+            int ret;
+            uint8_t data;
+
+            ret = i2c_read_blocking(i2c_default, addr, &data, 1, false);
+
+            if (ret>0){
+                printf("Found %02x\n", addr);
+            }
+        }
+    }
+}
+
 int main() {
     stdio_init_all();
     i2c_init(i2c_default, 100*1000);
@@ -38,6 +58,8 @@ int main() {
     waitForUSB();
 
     printf("Hello!\n");
+
+    //scanTCAPorts();
 
     tcaSelect(0);
     MPU6050 mpu(0x68);
@@ -86,27 +108,6 @@ int main() {
         printf("x: %.5f y: %.5f z: %.5f w: %.5f\n",
                q.x, q.y, q.z, q.w);
     }
-
-    /*
-    // 포트 스캔
-    for (uint8_t i=0; i<8; i++){
-        printf("TCA Port #%d", i);
-        tcaSelect(i);
-
-        for (uint8_t addr=0; addr<=127; addr++){
-            if (addr==TCA_ADDR) continue;
-
-            int ret;
-            uint8_t data;
-
-            ret = i2c_read_blocking(i2c_default, addr, &data, 1, false);
-
-            if (ret>0){
-                printf("Found %02x\n", addr);
-            }
-        }
-    }
-     */
 
     return 0;
 }
