@@ -58,6 +58,11 @@ int main() {
 
     printf("Hello!\n");
 
+    printf("WIFI SSID: %s\n", WIFI_SSID);
+    printf("WIFI Password: %s\n", WIFI_PASSWORD);
+    printf("UDP Address: %s\n", UDP_ADDR);
+    printf("UDP Port: %d\n", UDP_PORT);
+
     //scanTCAPorts();
 
     tcaSelect(0);
