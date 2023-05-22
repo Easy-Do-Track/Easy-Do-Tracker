@@ -3,6 +3,8 @@
 #include "hardware/i2c.h"
 #include "pico/cyw43_arch.h"
 #include "MPU6050_6Axis_MotionApps_V6_12.h"
+#include "lwip/pbuf.h"
+#include "lwip/udp.h"
 
 #define TCA_ADDR 0x70
 
@@ -71,6 +73,10 @@ int main() {
     }
     printf("Connected.\n");
 
+    udp_pcb* pcb = udp_new();
+    ip_addr_t  addr;
+    ipaddr_aton(UDP_ADDR, &addr);
+
     //scanTCAPorts();
 
     tcaSelect(0);
@@ -117,8 +123,21 @@ int main() {
         Quaternion q;
         mpu.dmpGetQuaternion(&q, fifo_buffer);
 
-        printf("x: %.5f y: %.5f z: %.5f w: %.5f\n",
-               q.x, q.y, q.z, q.w);
+        /*
+        printf("{\"key\": \"/joint/0\", \"value\": [%f, %f, %f, %f]}\n",
+               q.w, q.x, q.y, q.z);
+        */
+
+        pbuf *p = pbuf_alloc(PBUF_TRANSPORT, 128, PBUF_RAM);
+        char* req = (char*)p->payload;
+        memset(req, 0, 128);
+        snprintf(req, 128, R"({"key": "/joint/0", "value": [%f, %f, %f, %f]})",
+               q.w, q.x, q.y, q.z);
+        err_t e = udp_sendto(pcb, p, &addr, UDP_PORT);
+        pbuf_free(p);
+        if (e!=ERR_OK){
+            printf("Failed to send UDP packet: %d\n", err);
+        }
     }
 
     return 0;

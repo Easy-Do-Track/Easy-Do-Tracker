@@ -26,7 +26,6 @@ target_include_directories(easy-do-tracker PUBLIC
 target_link_libraries(easy-do-tracker
         pico_stdlib
         hardware_i2c
-        pico_cyw43_arch_none
         pico_cyw43_arch_lwip_threadsafe_background
         )
 
