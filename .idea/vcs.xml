@@ -2,5 +2,12 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/i2cdevlib" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/pico-sdk" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/pico-sdk/lib/btstack" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/pico-sdk/lib/cyw43-driver" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/pico-sdk/lib/lwip" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/pico-sdk/lib/mbedtls" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/pico-sdk/lib/tinyusb" vcs="Git" />
   </component>
 </project>

@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <vector>
+#include <string>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "pico/cyw43_arch.h"
@@ -7,6 +9,7 @@
 #include "lwip/udp.h"
 
 #define TCA_ADDR 0x70
+#define MSG_MAX_LEN 1024
 
 void waitForUSB(){
     while (!stdio_usb_connected()) { // blink the pico's led until usb connection is established
@@ -18,16 +21,20 @@ void waitForUSB(){
 // TODO: TCA 2개 병렬 연결 시 12개까지 선택 가능하도록 수정
 // i2cdevlib이 기본 버스만 지원해서 TCA9548 주소 변경 후 병렬 연결해야 할 것으로 보임
 void tcaSelect(uint8_t i){
-    if (i>7) return;
-
-    i = 1<<i;
+    if (i>7) {
+        i = 0; // disable
+    }else{
+        i = 1<<i;
+    }
 
     i2c_write_blocking(i2c_default, TCA_ADDR, &i, 1, false);
 }
 
-void scanTCAPorts(){
-    for (uint8_t i=0; i<8; i++){
-        printf("TCA Port #%d", i);
+std::vector<uint8_t> scanTCAPorts(){
+    std::vector<uint8_t> result;
+
+    for (uint8_t i=0; i<16; i++){
+        printf("TCA Port #%d\n", i);
         tcaSelect(i);
 
         for (uint8_t addr=0; addr<=127; addr++){
@@ -40,9 +47,12 @@ void scanTCAPorts(){
 
             if (ret>0){
                 printf("Found %02x\n", addr);
+                result.push_back(i);
             }
         }
     }
+
+    return result;
 }
 
 int main() {
@@ -77,7 +87,12 @@ int main() {
     ip_addr_t  addr;
     ipaddr_aton(UDP_ADDR, &addr);
 
-    //scanTCAPorts();
+    auto ports = scanTCAPorts();
+
+    if (ports.empty()){
+        printf("MPU6050 Not Found\n");
+        return 1;
+    }
 
     tcaSelect(0);
     MPU6050 mpu(0x68);
@@ -114,28 +129,45 @@ int main() {
 
     mpu.setDMPEnabled(true);
 
-    while(1){
-        uint8_t fifo_buffer[64];
-        if (!mpu.dmpGetCurrentFIFOPacket(fifo_buffer)){
-            continue;
+    char* buff = (char*)calloc(128, sizeof(char));
+    if (buff==nullptr){
+        printf("calloc error\n");
+        return 1;
+    }
+
+    while(1) {
+        loop:
+        std::string result = "{";
+
+        for (auto port: ports) {
+            if (result.length()>1){
+                result+=",";
+            }
+
+            tcaSelect(port);
+
+            uint8_t fifo_buffer[64];
+            if (!mpu.dmpGetCurrentFIFOPacket(fifo_buffer)) {
+                goto loop;
+            }
+
+            Quaternion q;
+            mpu.dmpGetQuaternion(&q, fifo_buffer);
+
+            snprintf(buff, 128, R"(%u: [%f, %f, %f, %f])", port, q.w, q.x, q.y, q.z);
+            result+=buff;
         }
 
-        Quaternion q;
-        mpu.dmpGetQuaternion(&q, fifo_buffer);
+        result+="}";
 
-        /*
-        printf("{\"key\": \"/joint/0\", \"value\": [%f, %f, %f, %f]}\n",
-               q.w, q.x, q.y, q.z);
-        */
+        pbuf *p = pbuf_alloc(PBUF_TRANSPORT, MSG_MAX_LEN, PBUF_RAM);
+        char *req = (char *) p->payload;
+        memset(req, 0, MSG_MAX_LEN);
+        strncpy(req, result.c_str(), MSG_MAX_LEN);
 
-        pbuf *p = pbuf_alloc(PBUF_TRANSPORT, 128, PBUF_RAM);
-        char* req = (char*)p->payload;
-        memset(req, 0, 128);
-        snprintf(req, 128, R"({"key": "/joint/0", "value": [%f, %f, %f, %f]})",
-               q.w, q.x, q.y, q.z);
         err_t e = udp_sendto(pcb, p, &addr, UDP_PORT);
         pbuf_free(p);
-        if (e!=ERR_OK){
+        if (e != ERR_OK) {
             printf("Failed to send UDP packet: %d\n", err);
         }
     }
