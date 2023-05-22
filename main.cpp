@@ -8,8 +8,10 @@
 #include "lwip/pbuf.h"
 #include "lwip/udp.h"
 
+typedef Quaternion sensorData[16];
+
 #define TCA_ADDR 0x70
-#define MSG_MAX_LEN 1024
+#define MSG_MAX_LEN sizeof(sensorData)
 
 void waitForUSB(){
     while (!stdio_usb_connected()) { // blink the pico's led until usb connection is established
@@ -129,41 +131,25 @@ int main() {
 
     mpu.setDMPEnabled(true);
 
-    char* buff = (char*)calloc(128, sizeof(char));
-    if (buff==nullptr){
-        printf("calloc error\n");
-        return 1;
-    }
-
     while(1) {
-        loop:
-        std::string result = "{";
+        sensorData data;
 
         for (auto port: ports) {
-            if (result.length()>1){
-                result+=",";
-            }
-
             tcaSelect(port);
 
             uint8_t fifo_buffer[64];
-            if (!mpu.dmpGetCurrentFIFOPacket(fifo_buffer)) {
-                goto loop;
-            }
+            while (!mpu.dmpGetCurrentFIFOPacket(fifo_buffer));
 
             Quaternion q;
             mpu.dmpGetQuaternion(&q, fifo_buffer);
 
-            snprintf(buff, 128, R"(%u: [%f, %f, %f, %f])", port, q.w, q.x, q.y, q.z);
-            result+=buff;
+            data[port] = q;
         }
-
-        result+="}";
 
         pbuf *p = pbuf_alloc(PBUF_TRANSPORT, MSG_MAX_LEN, PBUF_RAM);
         char *req = (char *) p->payload;
         memset(req, 0, MSG_MAX_LEN);
-        strncpy(req, result.c_str(), MSG_MAX_LEN);
+        memcpy(req, data, MSG_MAX_LEN);
 
         err_t e = udp_sendto(pcb, p, &addr, UDP_PORT);
         pbuf_free(p);
