@@ -1,17 +1,22 @@
 #include <stdio.h>
 #include <vector>
-#include <string>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "hardware/watchdog.h"
 #include "pico/cyw43_arch.h"
 #include "MPU6050_6Axis_MotionApps_V6_12.h"
 #include "lwip/pbuf.h"
 #include "lwip/udp.h"
+#include "pico/time.h"
 
 typedef Quaternion sensorData[16];
 
-#define TCA_ADDR 0x70
+#define TCA_ADDR_1 0x70
+#define TCA_ADDR_2 0x71
 #define MSG_MAX_LEN sizeof(sensorData)
+
+#define BTN_IN 12
+#define BTN_OUT 13
 
 void waitForUSB(){
     while (!stdio_usb_connected()) { // blink the pico's led until usb connection is established
@@ -20,16 +25,19 @@ void waitForUSB(){
     }
 }
 
-// TODO: TCA 2개 병렬 연결 시 12개까지 선택 가능하도록 수정
-// i2cdevlib이 기본 버스만 지원해서 TCA9548 주소 변경 후 병렬 연결해야 할 것으로 보임
 void tcaSelect(uint8_t i){
+    uint8_t t1, t2;
+
     if (i>7) {
-        i = 0; // disable
+        t1 = 0;
+        t2 = 1<<(i-8);
     }else{
-        i = 1<<i;
+        t1 = 1<<i;
+        t2 = 0;
     }
 
-    i2c_write_blocking(i2c_default, TCA_ADDR, &i, 1, false);
+    i2c_write_blocking(i2c_default, TCA_ADDR_1, &t1, 1, false);
+    i2c_write_blocking(i2c_default, TCA_ADDR_2, &t2, 1, false);
 }
 
 std::vector<uint8_t> scanTCAPorts(){
@@ -40,7 +48,7 @@ std::vector<uint8_t> scanTCAPorts(){
         tcaSelect(i);
 
         for (uint8_t addr=0; addr<=127; addr++){
-            if (addr==TCA_ADDR) continue;
+            if (addr==TCA_ADDR_1 || addr==TCA_ADDR_2) continue;
 
             int ret;
             uint8_t data;
@@ -68,7 +76,15 @@ int main() {
     cyw43_arch_init();
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 
-    waitForUSB();
+    gpio_init(BTN_IN);
+    gpio_set_dir(BTN_IN, GPIO_IN);
+    gpio_pull_up(BTN_IN);
+
+    gpio_init(BTN_OUT);
+    gpio_set_dir(BTN_OUT, GPIO_OUT);
+    gpio_put(BTN_OUT, false);
+
+    //waitForUSB();
 
     printf("Hello!\n");
 
@@ -79,9 +95,9 @@ int main() {
 
     cyw43_arch_enable_sta_mode();
     printf("Connecting to Wi-Fi...\n");
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000)){
-        printf("Failed to connect.\n");
-        return 1;
+
+    while (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000)){
+        printf("Failed to connect. Retrying...\n");
     }
     printf("Connected.\n");
 
@@ -96,43 +112,55 @@ int main() {
         return 1;
     }
 
-    tcaSelect(0);
     MPU6050 mpu(0x68);
+    for (auto port: ports){
+        printf("Initializing Port #%d\n", port);
+        tcaSelect(port);
 
-    mpu.initialize();
-    auto err = mpu.dmpInitialize();
+        mpu.initialize();
+        auto err = mpu.dmpInitialize();
 
-    if (err==1U){
-        printf("initial memory load failed\n");
-        return 1;
+        if (err==1U){
+            printf("initial memory load failed\n");
+            return 1;
+        }
+        if (err==2U){
+            printf("DMP configuration update failed\n");
+            return 2;
+        }
+
+        if (!mpu.testConnection()){
+            printf("connection failed\n");
+            return 3;
+        }
+
+        mpu.setXGyroOffset(0);
+        mpu.setYGyroOffset(0);
+        mpu.setZGyroOffset(0);
+        mpu.setXAccelOffset(0);
+        mpu.setYAccelOffset(0);
+        mpu.setZAccelOffset(0);
+
+        // 6초간 캘리브레이션
+        mpu.CalibrateAccel(3);
+        mpu.CalibrateGyro(3);
+
+        printf("\n");
+
+        mpu.setDMPEnabled(true);
     }
-    if (err==2U){
-        printf("DMP configuration update failed\n");
-        return 2;
-    }
 
-    if (!mpu.testConnection()){
-        printf("connection failed\n");
-        return 3;
-    }
-
-    mpu.setXGyroOffset(0);
-    mpu.setYGyroOffset(0);
-    mpu.setZGyroOffset(0);
-    mpu.setXAccelOffset(0);
-    mpu.setYAccelOffset(0);
-    mpu.setZAccelOffset(0);
-
-    // 6초간 캘리브레이션
-    mpu.CalibrateAccel(6);
-    mpu.CalibrateGyro(6);
-
-    printf("\n");
-
-    mpu.setDMPEnabled(true);
-
+    sensorData data;
     while(1) {
-        sensorData data;
+        if (!gpio_get(BTN_IN)){
+            sleep_ms(50);
+            while(!gpio_get(BTN_IN));
+            printf("Resetting...\n");
+            watchdog_enable(1,1);
+            while(1);
+        }
+
+        auto start = to_ms_since_boot(get_absolute_time());
 
         for (auto port: ports) {
             tcaSelect(port);
@@ -140,10 +168,7 @@ int main() {
             uint8_t fifo_buffer[64];
             while (!mpu.dmpGetCurrentFIFOPacket(fifo_buffer));
 
-            Quaternion q;
-            mpu.dmpGetQuaternion(&q, fifo_buffer);
-
-            data[port] = q;
+            mpu.dmpGetQuaternion(&data[port], fifo_buffer);
         }
 
         pbuf *p = pbuf_alloc(PBUF_TRANSPORT, MSG_MAX_LEN, PBUF_RAM);
@@ -154,8 +179,10 @@ int main() {
         err_t e = udp_sendto(pcb, p, &addr, UDP_PORT);
         pbuf_free(p);
         if (e != ERR_OK) {
-            printf("Failed to send UDP packet: %d\n", err);
+            printf("Failed to send UDP packet: %d\n", e);
         }
+        auto end = to_ms_since_boot(get_absolute_time());
+        printf("Scan took: %lu ms\n", end-start);
     }
 
     return 0;
